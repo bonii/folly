@@ -89,6 +89,7 @@ class AsyncBaseOp {
   // we support only these subclasses
   virtual AsyncIOOp* getAsyncIOOp() = 0;
   virtual IoUringOp* getIoUringOp() = 0;
+  virtual XNVMeOp* getXNVMeOp() 
 
   // ostream output
   virtual void toStream(std::ostream& os) const = 0;
