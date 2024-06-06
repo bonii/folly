@@ -50,8 +50,6 @@ class AsyncIOOp : public AsyncBaseOp {
 
   AsyncIOOp* getAsyncIOOp() override { return this; }
 
-  IoUringOp* getIoUringOp() override { return nullptr; }
-
   void toStream(std::ostream& os) const override;
 
   const iocb& getIocb() const { return iocb_; }
