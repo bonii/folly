@@ -19,10 +19,16 @@ class XNVMeOp : public AsyncBaseOp {
   void preadv(int fd, const iovec* iov, int iovcnt, off_t start) override;
   void pwrite(int fd, const void* buf, size_t size, off_t start) override;
   void pwritev(int fd, const iovec* iov, int iovcnt, off_t start) override;
+  XNVMeOp* getXNVMeOp() override {return this;};
 
  protected:
   xnvme_dev* getDeviceHandle(int fd);
 };
+
+class XNVMeNVMOp : public XNVMeOp {
+
+
+}
 
 class XNVMe : public AsyncBase {
  public:
