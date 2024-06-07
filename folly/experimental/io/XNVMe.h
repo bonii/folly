@@ -3,6 +3,7 @@
 #include <folly/SharedMutex.h>
 #include <folly/experimental/io/AsyncBase.h>
 #include <folly/experimental/io/Libxnvme.h>
+#include <unordered_map>
 
 #if FOLLY_HAS_LIBXNVME
 
@@ -15,20 +16,27 @@ class XNVMeOp : public AsyncBaseOp {
   XNVMeOp& operator=(const XNVMeOp&) = delete;
   ~XNVMeOp() override;
 
+  int openDevice(
+      const std::string deviceName, xnvme_opts opts = xnvme_opts_default());
+  void closeDevice(const std::string deviceName);
+  // API introduced to open a device handle
   void pread(int fd, void* buf, size_t size, off_t start) override;
   void preadv(int fd, const iovec* iov, int iovcnt, off_t start) override;
   void pwrite(int fd, const void* buf, size_t size, off_t start) override;
   void pwritev(int fd, const iovec* iov, int iovcnt, off_t start) override;
-  XNVMeOp* getXNVMeOp() override {return this;};
+  XNVMeOp* getXNVMeOp() override { return this; };
 
  protected:
+  std::unordered_map<std::string, int> deviceNamesToFileDescriptors;
+  std::unordered_map<int, xnvme_dev*> fileDescriptorsToDeviceHandles;
+
+ private:
   xnvme_dev* getDeviceHandle(int fd);
+  int allocateFileDescriptor();
+  void deallocateFileDescriptor(int);
 };
 
-class XNVMeNVMOp : public XNVMeOp {
-
-
-}
+class XNVMeNVMOp : public XNVMeOp {};
 
 class XNVMe : public AsyncBase {
  public:

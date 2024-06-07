@@ -5,19 +5,51 @@
 
 namespace folly {
 
+int XNVMeOp::openDevice(const std::string deviceName, xnvme_opts opts) {
+  auto iter = deviceNamesToFileDescriptors.find(deviceName);
+  int fd = -1;
+  if (iter != deviceNamesToFileDescriptors.end()) {
+    fd = allocateFileDescriptor();
+    auto dev = xnvme_dev_open(deviceName.c_str(), &opts);
+    if (!dev) {
+      auto fd = allocateFileDescriptor();
+      fileDescriptorsToDeviceHandles.insert({fd, dev});
+      deviceNamesToFileDescriptors.insert({deviceName, fd});
+    } else {
+      fd = -1;
+      // TODO: Better error handling
+    }
+  }
+  return fd;
+}
+
+void XNVMeOp::closeDevice(const std::string deviceName) {
+  auto iter = deviceNamesToFileDescriptors.find(deviceName);
+  if (iter != deviceNamesToFileDescriptors.end()) {
+    auto fd = iter->second;
+    auto dev = fileDescriptorsToDeviceHandles.find(fd)->second;
+    xnvme_dev_close(dev); // TODO: Better error handling
+    deallocateFileDescriptor(fd);
+    fileDescriptorsToDeviceHandles.erase(fd);
+    deviceNamesToFileDescriptors.erase(deviceName);
+  }
+}
+
 void XNVMeOp::pread(int fd, void* buf, size_t size, off_t start) {
-  xnvme_file_pread(
-      &(xnvme_file_get_cmd_ctx(getDeviceHandle(fd))), buf, size, start);
+  auto cmd_ctx = xnvme_file_get_cmd_ctx(getDeviceHandle(fd));
+  xnvme_file_pread(&cmd_ctx, buf, size, start);
 }
 
 void XNVMeOp::pwrite(int fd, const void* buf, size_t size, off_t start) {
- xnvme_file_pwrite(&(xnvme_file_get_cmd_ctx(getDeviceHandle(fd))), const_cast<void*>(buf), size, start); 
+  auto cmd_ctx = xnvme_file_get_cmd_ctx(getDeviceHandle(fd));
+  xnvme_file_pwrite(&cmd_ctx, const_cast<void*>(buf), size, start);
 }
 
 // Maps an open file descriptor to a device handle
-xnvme_dev* getDeviceHandle(int fd) {
+xnvme_dev* XNVMeOp::getDeviceHandle(int fd) {
   // TODO: Implement
-  return (xnvme_dev*)nullptr;
+  auto iter = fileDescriptorsToDeviceHandles.find(fd);
+  return iter !=  fileDescriptorsToDeviceHandles.end() ? iter->second : nullptr; 
 }
 
 XNVMe::XNVMe(
