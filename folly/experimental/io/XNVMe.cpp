@@ -49,7 +49,7 @@ void XNVMeOp::pwrite(int fd, const void* buf, size_t size, off_t start) {
 xnvme_dev* XNVMeOp::getDeviceHandle(int fd) {
   // TODO: Implement
   auto iter = fileDescriptorsToDeviceHandles.find(fd);
-  return iter !=  fileDescriptorsToDeviceHandles.end() ? iter->second : nullptr; 
+  return iter != fileDescriptorsToDeviceHandles.end() ? iter->second : nullptr;
 }
 
 XNVMe::XNVMe(
@@ -70,12 +70,12 @@ XNVMe::~XNVMe() {
 }
 
 int XNVMe::submitOne(AsyncBaseOp* op) {
-  if(!op) {
+  if (!op) {
     return -1;
   }
 
   std::unique_lock lk(submitMutex_);
-  
+
   return 0;
 }
 

@@ -1,9 +1,10 @@
 #pragma once
 
+#include <cstdint>
+#include <unordered_map>
 #include <folly/SharedMutex.h>
 #include <folly/experimental/io/AsyncBase.h>
 #include <folly/experimental/io/Libxnvme.h>
-#include <unordered_map>
 
 #if FOLLY_HAS_LIBXNVME
 
@@ -26,17 +27,71 @@ class XNVMeOp : public AsyncBaseOp {
   void pwritev(int fd, const iovec* iov, int iovcnt, off_t start) override;
   XNVMeOp* getXNVMeOp() override { return this; };
 
- protected:
+ private:
+  xnvme_dev* getDeviceHandle(int fd);
   std::unordered_map<std::string, int> deviceNamesToFileDescriptors;
   std::unordered_map<int, xnvme_dev*> fileDescriptorsToDeviceHandles;
 
- private:
-  xnvme_dev* getDeviceHandle(int fd);
   int allocateFileDescriptor();
   void deallocateFileDescriptor(int);
 };
 
-class XNVMeNVMOp : public XNVMeOp {};
+/**
+ * Encodes basic NVM operations supported by XNVMe
+ */
+class XNVMeNVMOp : public XNVMeOp {
+  int nvmCompare(
+      std::uint32_t nsid,
+      std::uint64_t slba,
+      std::uint16_t nlb,
+      void* dbuf,
+      void* mbuf);
+  int nvmDsm(
+      std::uint32_t nsid,
+      struct xnvme_spec_dsm_range* dsm_range,
+      std::uint8_t nr,
+      bool ad,
+      bool idw,
+      bool idr);
+  int nvmMgmtRecv(
+      std::uint32_t nsid,
+      std::uint8_t mo,
+      std::uint16_t mos,
+      void* dbuf,
+      std::uint32_t dbuf_nbytes);
+  int nvmMgmtSend(
+      std::uint32_t nsid,
+      std::uint8_t mo,
+      std::uint16_t mos,
+      void* dbuf,
+      std::uint32_t dbuf_nbytes);
+  int nvmRead(
+      std::uint32_t nsid,
+      std::uint64_t slba,
+      std::uint16_t nlb,
+      void* dbuf,
+      void* mbuf);
+  int nvmScopy(
+      std::uint32_t nsid,
+      std::uint64_t sdlba,
+      struct xnvme_spec_nvm_scopy_fmt_zero* ranges,
+      std::uint8_t nr,
+      enum xnvme_nvm_scopy_fmt copy_fmt);
+  int nvmWrite(
+      std::uint32_t nsid,
+      std::uint64_t slba,
+      std::uint16_t nlb,
+      const void* dbuf,
+      const void* mbuf);
+  int nvmWriteUncorrectable(
+      std::uint32_t nsid, std::uint64_t slba, std::uint16_t nlb);
+  int nvmWriteZeroes(std::uint32_t nsid, std::uint64_t slba, std::uint16_t nlb);
+  void prepNvm(
+      std::uint8_t opcode,
+      std::uint32_t nsid,
+      std::uint64_t slba,
+      std::uint16_t nlb);
+};
 
 class XNVMe : public AsyncBase {
  public:
