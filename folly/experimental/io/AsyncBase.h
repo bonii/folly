@@ -15,7 +15,3 @@
  */
 
 #include <folly/io/async/AsyncBase.h>
-
-namespace folly {
-class XNVMeOp;
-} // namespace folly

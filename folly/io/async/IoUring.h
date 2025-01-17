@@ -80,6 +80,8 @@ class IoUringOp : public AsyncBaseOp {
 
   IoUringOp* getIoUringOp() override { return this; }
 
+  XNVMeOp* getXNVMeOp() override { return nullptr; }
+
   void toStream(std::ostream& os) const override;
 
   void initBase() { init(); }
