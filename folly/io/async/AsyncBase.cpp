@@ -17,6 +17,7 @@
 #include <folly/io/async/AsyncBase.h>
 
 #include <cerrno>
+#include <iostream>
 #include <ostream>
 #include <stdexcept>
 #include <string>
@@ -163,7 +164,9 @@ int AsyncBase::submit(Range<Op**> ops) {
 Range<AsyncBase::Op**> AsyncBase::wait(size_t minRequests) {
   CHECK(isInit());
   CHECK_EQ(pollFd_, -1) << "wait() only allowed on non-pollable object";
+  
   auto p = pending_.load(std::memory_order_acquire);
+  std::cout << "AsyncBase: minRequests, pending" << minRequests << "," << p;
   CHECK_LE(minRequests, p);
   return doWait(WaitType::COMPLETE, minRequests, p, completed_);
 }
