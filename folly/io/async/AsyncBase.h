@@ -35,6 +35,7 @@
 namespace folly {
 class AsyncIOOp;
 class IoUringOp;
+class XNVMeOp;
 /**
  * An AsyncBaseOp represents a pending operation.  You may set a notification
  * callback or you may use this class's methods directly.
@@ -89,6 +90,7 @@ class AsyncBaseOp {
   // we support only these subclasses
   virtual AsyncIOOp* getAsyncIOOp() = 0;
   virtual IoUringOp* getIoUringOp() = 0;
+  virtual XNVMeOp* getXNVMeOp() = 0;
 
   // ostream output
   virtual void toStream(std::ostream& os) const = 0;
