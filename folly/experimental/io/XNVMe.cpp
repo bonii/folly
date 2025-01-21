@@ -154,11 +154,11 @@ void XNVMe::process_fn(struct xnvme_cmd_ctx* ctx, XNVMeOp* op) {
 
 void completion_callback_fn(struct xnvme_cmd_ctx* ctx, void* cb_arg) {
   // Invoke the processing function
-  auto bound_fn = static_cast<std::function<void()>*>(cb_arg);
-  // Invoke the bound function
-  (*bound_fn)();
-  delete bound_fn;
+  auto args = static_cast<xnvme_callback_args*>(cb_arg);
+  args->backend->process_fn(ctx, args->op);
   xnvme_queue_put_cmd_ctx(ctx->async.queue, ctx);
+  delete args;
+  //delete bound_fn;
 }
 
 int XNVMe::parseAndCmdPass(XNVMeOp* the_op) {
@@ -167,10 +167,7 @@ int XNVMe::parseAndCmdPass(XNVMeOp* the_op) {
     return -1;
 
   cmd_ctx->async.cb = completion_callback_fn;
-  auto instance_cb_fn = std::bind(&XNVMe::process_fn, this, cmd_ctx, the_op);
-  auto x = new std::function<void(XNVMeOp*)>(instance_cb_fn);
-  cmd_ctx->async.cb_arg =
-      static_cast<void*>(new std::function<void(XNVMeOp*)>(instance_cb_fn));
+  cmd_ctx->async.cb_arg = static_cast<void*>(new xnvme_callback_args(the_op, this));
   cmd_ctx->cmd.common.nsid = xnvme_dev_get_nsid(cmd_ctx->dev);
 
   switch (the_op->args.cmd_type) {
