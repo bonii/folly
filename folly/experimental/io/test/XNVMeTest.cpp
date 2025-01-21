@@ -26,24 +26,32 @@ void writeDeviceAsynchronously(
   auto xnvmeBackend = new XNVMe(numAsyncRequests, device_uri, async_be_opts);
   auto fd = open("/dev/nvme0n1", O_WRONLY);
 
-  auto writeBuffer = new char(writeBufferSize);
-  ::memset(writeBuffer, 1, writeBufferSize);
-  XNVMeOp* writeOps[numAsyncRequests];
+  char** writeBuffers = new char*[numAsyncRequests];
+  EXPECT_TRUE(writeBuffers != nullptr);  
+  XNVMeOp** writeOps = new XNVMeOp*[numAsyncRequests];
+  EXPECT_TRUE(writeOps != nullptr);
+  EXPECT_TRUE(writeBuffers != nullptr);
+  EXPECT_TRUE(writeOps != nullptr);
 
   for (int i = 0; i < numAsyncRequests; i++) {
     writeOps[i] = new XNVMeOp();
-    writeOps[i]->pwrite(fd, writeBuffer, writeBufferSize, 0);
+    EXPECT_TRUE(writeOps[i] != nullptr);
+    writeBuffers[i] = new char[writeBufferSize];
+    EXPECT_TRUE(writeBuffers[i] != nullptr);
+    ::memset(writeBuffers[i], 1, writeBufferSize);
+    writeOps[i]->pwrite(fd, writeBuffers[i], writeBufferSize, 0);
     xnvmeBackend->submit(writeOps[i]);
   }
   xnvmeBackend->wait(numAsyncRequests);
 
-  // Clean up allocated buiffers
-  delete writeBuffer;
   for (int i = 0; i < numAsyncRequests; i++) {
     // Check that all bytes in the buffer have been written
     EXPECT_EQ(writeBufferSize, writeOps[i]->result());
     delete writeOps[i];
+    delete[] writeBuffers[i];
   }
+  delete[] writeOps;
+  delete[] writeBuffers;
   delete xnvmeBackend;
   close(fd);
 }
@@ -53,7 +61,7 @@ TEST(WriteTest, IouringBackendTest) {
   auto iouringLinuxBeOpts = xnvme_opts_default();
   iouringLinuxBeOpts.be = "linux";
   iouringLinuxBeOpts.async = "io_uring";
-  writeDeviceAsynchronously(iouringLinuxBeOpts, 2048, deviceUri, 100);  
+  writeDeviceAsynchronously(iouringLinuxBeOpts, 2048, deviceUri, 1000);  
 }
 
 
@@ -62,7 +70,7 @@ TEST(WriteTest, LibAioBackendTest) {
   auto libAioLinuxBeOpts = xnvme_opts_default();
   libAioLinuxBeOpts.be = "linux";
   libAioLinuxBeOpts.async = "libaio";
-  writeDeviceAsynchronously(libAioLinuxBeOpts, 1024, deviceUri, 100);  
+  writeDeviceAsynchronously(libAioLinuxBeOpts, 1024, deviceUri, 1000);  
 }
 
 } // namespace folly
