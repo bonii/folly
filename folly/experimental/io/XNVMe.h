@@ -135,5 +135,12 @@ class XNVMe : public AsyncBase {
 
   int parseAndCmdPass(XNVMeOp* op);
 };
+
+struct xnvme_callback_args {
+  struct XNVMeOp* op;
+  struct XNVMe* backend;
+
+  xnvme_callback_args(XNVMeOp* the_op, XNVMe* the_backend): op(the_op), backend(the_backend) {}
+};
 } // namespace folly
 #endif
