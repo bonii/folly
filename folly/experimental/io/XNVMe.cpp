@@ -56,53 +56,33 @@ void XNVMeOp::pwritev(int fd, const iovec* iov, int iovcnt, off_t start) {
 }
 
 void XNVMeOp::cmd_pass(
-    void* dbuf, size_t dbuf_nbytes, void* mbuf, size_t mbuf_nbytes) {
+    void* dbuf,
+    size_t dbuf_nbytes,
+    void* mbuf,
+    size_t mbuf_nbytes,
+    xnvme_cmd_setting_fn fn) {
   init();
   args.cmd_type = CMD_PASS;
   args.operation.cmd_buffers.dbuf = dbuf;
   args.operation.cmd_buffers.dbuf_nbytes = dbuf_nbytes;
   args.operation.cmd_buffers.mbuf = mbuf;
   args.operation.cmd_buffers.mbuf_nbytes = mbuf_nbytes;
+  args.operation.cmd_buffers.fn = fn;
 }
 
 void XNVMeOp::cmd_pass_admin(
-    void* dbuf, size_t dbuf_nbytes, void* mbuf, size_t mbuf_nbytes) {
+    void* dbuf,
+    size_t dbuf_nbytes,
+    void* mbuf,
+    size_t mbuf_nbytes,
+    xnvme_cmd_setting_fn fn) {
   init();
   args.cmd_type = CMD_PASS_ADMIN;
   args.operation.cmd_buffers.dbuf = dbuf;
   args.operation.cmd_buffers.dbuf_nbytes = dbuf_nbytes;
   args.operation.cmd_buffers.mbuf = mbuf;
   args.operation.cmd_buffers.mbuf_nbytes = mbuf_nbytes;
-}
-
-int XNVMe::openDevice(const std::string deviceName, xnvme_opts opts) {
-  auto iter = device_to_fd.find(deviceName);
-  int fd = -1;
-  if (iter != device_to_fd.end()) {
-    fd = allocateFileDescriptor();
-    auto dev = xnvme_dev_open(deviceName.c_str(), &opts);
-    if (!dev) {
-      auto fd = allocateFileDescriptor();
-      fd_to_device.insert({fd, dev});
-      device_to_fd.insert({deviceName, fd});
-    } else {
-      fd = -1;
-      // TODO: Better error handling
-    }
-  }
-  return fd;
-}
-
-void XNVMe::closeDevice(const std::string deviceName) {
-  auto iter = device_to_fd.find(deviceName);
-  if (iter != device_to_fd.end()) {
-    auto fd = iter->second;
-    auto dev = fd_to_device.find(fd)->second;
-    xnvme_dev_close(dev); // TODO: Better error handling
-    deallocateFileDescriptor(fd);
-    fd_to_device.erase(fd);
-    device_to_fd.erase(deviceName);
-  }
+  args.operation.cmd_buffers.fn = fn;
 }
 
 void XNVMeOp::toStream(std::ostream& os) const {
@@ -113,8 +93,11 @@ XNVMe::XNVMe(
     size_t capacity,
     std::string& device_uri,
     xnvme_opts opts,
-    folly::AsyncBase::PollMode pollMode)
-    : AsyncBase(capacity, pollMode), opts_(opts) {
+    folly::AsyncBase::PollMode pollMode,
+    std::chrono::duration<double> sleepWhilePolling)
+    : AsyncBase(capacity, pollMode),
+      opts_(opts),
+      sleepIntervalWhilePolling_(sleepWhilePolling) {
   device = xnvme_dev_open(device_uri.c_str(), &opts_);
   std::cout << opts_.be << "  ,  " << opts_.async << std::endl;
   constexpr size_t MAX_XNVME_QUEUE_CAPACITY = 4096;
@@ -148,6 +131,8 @@ void XNVMe::process_fn(struct xnvme_cmd_ctx* ctx, XNVMeOp* op) {
     xnvme_cli_pinf("Command completed succesfully");
   }
   op->cdw = ctx->cpl.result;
+  decrementPending();
+  xnvme_queue_put_cmd_ctx(ctx->async.queue, ctx);
   std::unique_lock lk(drainMutex_);
   results.emplace_back(op);
 }
@@ -156,9 +141,7 @@ void completion_callback_fn(struct xnvme_cmd_ctx* ctx, void* cb_arg) {
   // Invoke the processing function
   auto args = static_cast<xnvme_callback_args*>(cb_arg);
   args->backend->process_fn(ctx, args->op);
-  xnvme_queue_put_cmd_ctx(ctx->async.queue, ctx);
   delete args;
-  //delete bound_fn;
 }
 
 int XNVMe::parseAndCmdPass(XNVMeOp* the_op) {
@@ -167,7 +150,8 @@ int XNVMe::parseAndCmdPass(XNVMeOp* the_op) {
     return -1;
 
   cmd_ctx->async.cb = completion_callback_fn;
-  cmd_ctx->async.cb_arg = static_cast<void*>(new xnvme_callback_args(the_op, this));
+  cmd_ctx->async.cb_arg =
+      static_cast<void*>(new xnvme_callback_args(the_op, this));
   cmd_ctx->cmd.common.nsid = xnvme_dev_get_nsid(cmd_ctx->dev);
 
   switch (the_op->args.cmd_type) {
@@ -215,6 +199,28 @@ int XNVMe::parseAndCmdPass(XNVMeOp* the_op) {
           total_iov_size(the_op->args),
           NULL,
           0);
+      break;
+
+    case command_type::CMD_PASS:
+      // Invoke the function to set the appropriate nvme command
+      the_op->args.operation.cmd_buffers.fn(cmd_ctx->cmd);
+      xnvme_cmd_pass(
+          cmd_ctx,
+          the_op->args.operation.cmd_buffers.dbuf,
+          the_op->args.operation.cmd_buffers.dbuf_nbytes,
+          the_op->args.operation.cmd_buffers.mbuf,
+          the_op->args.operation.cmd_buffers.mbuf_nbytes);
+      break;
+
+      case command_type::CMD_PASS_ADMIN:
+      // Invoke the function to set the appropriate nvme command
+      the_op->args.operation.cmd_buffers.fn(cmd_ctx->cmd);
+      xnvme_cmd_pass_admin(
+          cmd_ctx,
+          the_op->args.operation.cmd_buffers.dbuf,
+          the_op->args.operation.cmd_buffers.dbuf_nbytes,
+          the_op->args.operation.cmd_buffers.mbuf,
+          the_op->args.operation.cmd_buffers.mbuf_nbytes);
       break;
 
     default:
@@ -270,7 +276,9 @@ Range<AsyncBase::Op**> XNVMe::doWait(
   size_t completed = 0;
   size_t total_completed = 0;
   while (completed < minRequests) {
-    // Spin continuously for requests
+    // Spin continuously for requests with a configured backoff
+    if (pollMode_ == POLLABLE)
+      std::this_thread::sleep_for(sleepIntervalWhilePolling_);
     completed = xnvme_queue_poke(queue_, maxRequests - total_completed);
     if (completed > 0)
       total_completed += completed;
@@ -282,7 +290,7 @@ Range<AsyncBase::Op**> XNVMe::doWait(
   std::unique_lock lk(drainMutex_);
   for (auto completed_op : results) {
     CHECK(completed_op);
-    decrementPending();
+    // decrementPending();
     switch (type) {
       case WaitType::COMPLETE:
         completed_op->complete(completed_op->cdw);

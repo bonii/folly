@@ -1,9 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <queue>
-#include <unordered_map>
-#include <unordered_set>
 #include <glog/logging.h>
 #include <folly/SharedMutex.h>
 #include <folly/experimental/io/AsyncBase.h>
@@ -15,6 +14,7 @@
 
 namespace folly {
 enum command_type { PREAD, PWRITE, PREADV, PWRITEV, CMD_PASS, CMD_PASS_ADMIN };
+typedef void (*xnvme_cmd_setting_fn)(xnvme_spec_cmd);
 
 struct XNMeOpArgs {
   command_type cmd_type;
@@ -34,12 +34,13 @@ struct XNMeOpArgs {
       int iovcnt;
     } vector_buffer;
 
-    // For cmd_pass and cmd_pass_admin
+    // For cmd_pass
     struct {
       void* dbuf;
       size_t dbuf_nbytes;
       void* mbuf;
       size_t mbuf_nbytes;
+      xnvme_cmd_setting_fn fn;
     } cmd_buffers;
   } operation;
 };
@@ -60,7 +61,7 @@ class XNVMeOp : public AsyncBaseOp {
   XNVMeOp(NotificationCallback cb = NotificationCallback()) {};
   XNVMeOp(const XNVMeOp&) = delete;
   XNVMeOp& operator=(const XNVMeOp&) = delete;
-  ~XNVMeOp() override {}
+  ~XNVMeOp() override {};
 
   AsyncIOOp* getAsyncIOOp() override { return nullptr; }
   IoUringOp* getIoUringOp() override { return nullptr; }
@@ -77,9 +78,19 @@ class XNVMeOp : public AsyncBaseOp {
   void pwritev(int fd, const iovec* iov, int iovcnt, off_t start) override;
 
   // API introduced to handle the passing of commands
-  void cmd_pass(void* dbuf, size_t dbuf_nbytes, void* mbuf, size_t mbuf_nbytes);
+  void cmd_pass(
+      void* dbuf,
+      size_t dbuf_nbytes,
+      void* mbuf,
+      size_t mbuf_nbytes,
+      xnvme_cmd_setting_fn fn);
+
   void cmd_pass_admin(
-      void* dbuf, size_t dbuf_nbytes, void* mbuf, size_t mbuf_nbytes);
+      void* dbuf,
+      size_t dbuf_nbytes,
+      void* mbuf,
+      size_t mbuf_nbytes,
+      xnvme_cmd_setting_fn fn);
 
   XNMeOpArgs args;
 };
@@ -87,12 +98,15 @@ class XNVMeOp : public AsyncBaseOp {
 class XNVMe : public AsyncBase {
  public:
   using Op = XNVMeOp;
+  constexpr static std::chrono::duration<double> defaultPollingInterval =
+      std::chrono::microseconds(10);
 
   explicit XNVMe(
       size_t capacity,
       std::string& device_uri,
       xnvme_opts opts = xnvme_opts_default(),
-      PollMode pollMode = NOT_POLLABLE);
+      PollMode pollMode = POLLABLE,
+      std::chrono::duration<double> sleepWhilePolling = defaultPollingInterval);
 
   XNVMe(const XNVMe&) = delete;
   XNVMe& operator=(const XNVMe&) = delete;
@@ -105,9 +119,6 @@ class XNVMe : public AsyncBase {
   int submitRange(Range<AsyncBaseOp**> ops) override;
   void initializeContext() override;
   int drainPollFd() override;
-  int openDevice(
-      std::string deviceName, xnvme_opts opts = xnvme_opts_default());
-  void closeDevice(const std::string deviceName);
 
  private:
   struct xnvme_dev* device = nullptr;
@@ -115,17 +126,11 @@ class XNVMe : public AsyncBase {
   struct xnvme_queue* queue_ = nullptr;
   mutable SharedMutex submitMutex_;
   mutable SharedMutex drainMutex_;
+  std::chrono::duration<double> sleepIntervalWhilePolling_{
+      defaultPollingInterval};
 
-  std::unordered_map<std::string, int> device_to_fd;
-  std::unordered_map<int, xnvme_dev*> fd_to_device;
-  std::unordered_set<int> allocated_fds{};
-  std::atomic<int> fd_counters{0};
   std::atomic<bool> available{false};
   std::vector<XNVMeOp*> results;
-
-  inline int allocateFileDescriptor() { return fd_counters++; }
-
-  inline void deallocateFileDescriptor(int fd) { ; }
 
   Range<AsyncBase::Op**> doWait(
       WaitType type,
@@ -140,7 +145,8 @@ struct xnvme_callback_args {
   struct XNVMeOp* op;
   struct XNVMe* backend;
 
-  xnvme_callback_args(XNVMeOp* the_op, XNVMe* the_backend): op(the_op), backend(the_backend) {}
+  xnvme_callback_args(XNVMeOp* the_op, XNVMe* the_backend)
+      : op(the_op), backend(the_backend) {}
 };
 } // namespace folly
 #endif
