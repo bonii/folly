@@ -164,7 +164,7 @@ TEST(WriteReadTest, LibAioBackendTest) {
 }
 
 TEST(CmdPassThruTest, FlushCommandPassThruTest) {
-  auto deviceUri = std::string("/dev/nvme0n1");
+  auto deviceUri = std::string("/dev/ng0n1");
   auto iouringLinuxBeOpts = xnvme_opts_default();
   iouringLinuxBeOpts.be = "linux";
   iouringLinuxBeOpts.async = "io_uring_cmd";
