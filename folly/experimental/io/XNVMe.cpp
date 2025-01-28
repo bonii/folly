@@ -103,21 +103,19 @@ XNVMe::XNVMe(
   constexpr size_t MAX_XNVME_QUEUE_CAPACITY = 4096;
   CHECK_LE(capacity, MAX_XNVME_QUEUE_CAPACITY);
   if (device != nullptr) {
-    xnvme_dev_derive_geo(device);
+    CHECK_ERR(xnvme_dev_derive_geo(device));
     // Round off the capacity to the closest power of two
     capacity = std::__bit_ceil(capacity);
-    if (xnvme_queue_init(device, capacity, 0, &queue_) == 0) {
-      CHECK(queue_);
-      available.store(true);
-      initializeContext();
-    }
+    CHECK_ERR(xnvme_queue_init(device, capacity, 0, &queue_));
+    available.store(true);
+    initializeContext();
   }
 }
 
 XNVMe::~XNVMe() {
   if (available.load()) {
-    xnvme_queue_drain(queue_);
-    xnvme_queue_term(queue_);
+    CHECK_ERR(xnvme_queue_drain(queue_));
+    CHECK_ERR(xnvme_queue_term(queue_));
     if (device != nullptr)
       xnvme_dev_close(device);
   }
@@ -212,7 +210,7 @@ int XNVMe::parseAndCmdPass(XNVMeOp* the_op) {
           the_op->args.operation.cmd_buffers.mbuf_nbytes);
       break;
 
-      case command_type::CMD_PASS_ADMIN:
+    case command_type::CMD_PASS_ADMIN:
       // Invoke the function to set the appropriate nvme command
       the_op->args.operation.cmd_buffers.fn(cmd_ctx->cmd);
       xnvme_cmd_pass_admin(
