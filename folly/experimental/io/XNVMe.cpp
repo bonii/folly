@@ -98,6 +98,7 @@ XNVMe::XNVMe(
     : AsyncBase(capacity, pollMode),
       opts_(opts),
       sleepIntervalWhilePolling_(sleepWhilePolling) {
+  std::unique_lock lk{singleMutex_};
   device = xnvme_dev_open(device_uri.c_str(), &opts_);
   std::cout << opts_.be << "  ,  " << opts_.async << std::endl;
   constexpr size_t MAX_XNVME_QUEUE_CAPACITY = 4096;
@@ -114,6 +115,7 @@ XNVMe::XNVMe(
 
 XNVMe::~XNVMe() {
   if (available.load()) {
+    std::unique_lock lk {singleMutex_};
     CHECK_ERR(xnvme_queue_drain(queue_));
     CHECK_ERR(xnvme_queue_term(queue_));
     if (device != nullptr)
@@ -122,6 +124,7 @@ XNVMe::~XNVMe() {
 }
 
 void XNVMe::process_fn(struct xnvme_cmd_ctx* ctx, XNVMeOp* op) {
+  std::unique_lock lk(singleMutex_);
   if (xnvme_cmd_ctx_cpl_status(ctx)) {
     xnvme_cli_pinf("Command did not complete successfully");
     xnvme_cmd_ctx_pr(ctx, XNVME_PR_DEF);
@@ -130,8 +133,7 @@ void XNVMe::process_fn(struct xnvme_cmd_ctx* ctx, XNVMeOp* op) {
   }
   op->cdw = ctx->cpl.result;
   decrementPending();
-  xnvme_queue_put_cmd_ctx(ctx->async.queue, ctx);
-  std::unique_lock lk(drainMutex_);
+  xnvme_queue_put_cmd_ctx(ctx->async.queue, ctx);  
   results.emplace_back(op);
 }
 
@@ -233,13 +235,13 @@ int XNVMe::submitOne(AsyncBaseOp* op) {
   }
   CHECK(queue_);
   auto the_op = op->getXNVMeOp();
-  std::unique_lock lk(submitMutex_);
+  std::unique_lock lk(singleMutex_);
   return parseAndCmdPass(the_op);
 }
 
 int XNVMe::submitRange(Range<AsyncBaseOp**> ops) {
   size_t total = 0;
-  std::unique_lock lk(submitMutex_);
+  std::unique_lock lk(singleMutex_);
 
   for (size_t i = 0; i < ops.size(); i++) {
     if (parseAndCmdPass(ops[i]->getXNVMeOp()))
@@ -285,7 +287,7 @@ Range<AsyncBase::Op**> XNVMe::doWait(
       throw std::runtime_error("Something wrong");
   }
 
-  std::unique_lock lk(drainMutex_);
+  std::unique_lock lk(singleMutex_);
   for (auto completed_op : results) {
     CHECK(completed_op);
     // decrementPending();
