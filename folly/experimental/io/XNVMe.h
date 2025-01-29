@@ -124,8 +124,7 @@ class XNVMe : public AsyncBase {
   struct xnvme_dev* device = nullptr;
   struct xnvme_opts opts_;
   struct xnvme_queue* queue_ = nullptr;
-  mutable SharedMutex submitMutex_;
-  mutable SharedMutex drainMutex_;
+  mutable SharedMutex singleMutex_;
   std::chrono::duration<double> sleepIntervalWhilePolling_{
       defaultPollingInterval};
 

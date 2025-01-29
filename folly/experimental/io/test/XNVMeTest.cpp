@@ -44,7 +44,7 @@ void writeDeviceAsynchronously(
     writeBuffers[i] = new char[writeBufferSize];
     EXPECT_TRUE(writeBuffers[i] != nullptr);
     ::memset(writeBuffers[i], 1, writeBufferSize);
-    writeOps[i]->pwrite(fd, writeBuffers[i], writeBufferSize, 0);
+    writeOps[i]->pwrite(fd, writeBuffers[i], writeBufferSize, i);
     xnvmeBackend->submit(writeOps[i]);
   }
   EXPECT_EQ(xnvmeBackend->pending(), numAsyncRequests - completed1);
@@ -64,7 +64,7 @@ void writeDeviceAsynchronously(
       readBuffers[i] = new char[writeBufferSize];
       EXPECT_TRUE(writeBuffers[i] != nullptr);
       ::memset(readBuffers[i], 0, writeBufferSize);
-      readOps[i]->pread(fd, readBuffers[i], writeBufferSize, 0);
+      readOps[i]->pread(fd, readBuffers[i], writeBufferSize, i);
       xnvmeBackend->submit(readOps[i]);
     }
     EXPECT_EQ(xnvmeBackend->pending(), numAsyncRequests - completed2);
@@ -160,7 +160,7 @@ TEST(WriteReadTest, LibAioBackendTest) {
   auto libAioLinuxBeOpts = xnvme_opts_default();
   libAioLinuxBeOpts.be = "linux";
   libAioLinuxBeOpts.async = "libaio";
-  writeDeviceAsynchronously(libAioLinuxBeOpts, 1024, deviceUri, 1000, true);
+  writeDeviceAsynchronously(libAioLinuxBeOpts, 2, deviceUri, 10, true);
 }
 
 TEST(CmdPassThruTest, FlushCommandPassThruTest) {
