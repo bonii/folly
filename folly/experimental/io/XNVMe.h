@@ -14,7 +14,7 @@
 
 namespace folly {
 enum command_type { PREAD, PWRITE, PREADV, PWRITEV, CMD_PASS, CMD_PASS_ADMIN };
-typedef void (*xnvme_cmd_setting_fn)(xnvme_spec_cmd);
+typedef void (*xnvme_cmd_setting_fn)(xnvme_spec_cmd&);
 
 struct XNMeOpArgs {
   command_type cmd_type;
@@ -113,6 +113,7 @@ class XNVMe : public AsyncBase {
   ~XNVMe() override;
   bool isAvailable() { return available.load(); }
   void process_fn(struct xnvme_cmd_ctx* ctx, XNVMeOp* op);
+  struct xnvme_dev* device = nullptr;
 
  protected:
   int submitOne(AsyncBaseOp* Op) override;
@@ -121,7 +122,7 @@ class XNVMe : public AsyncBase {
   int drainPollFd() override;
 
  private:
-  struct xnvme_dev* device = nullptr;
+  
   struct xnvme_opts opts_;
   struct xnvme_queue* queue_ = nullptr;
   mutable SharedMutex singleMutex_;

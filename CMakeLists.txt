@@ -799,9 +799,6 @@ if (BUILD_TESTS OR BUILD_BENCHMARKS)
       #TEST read_mostly_shared_ptr_test SOURCES ReadMostlySharedPtrTest.cpp
       #TEST ref_count_test SOURCES RefCountTest.cpp
 
-    DIRECTORY experimental/io/test/
-      TEST xnvme_test SOURCES XNVMeTest.cpp
-
     DIRECTORY external/farmhash/test/
       TEST external_farmhash_farmhash_test SOURCES farmhash_test.cpp
 
@@ -1225,6 +1222,13 @@ if (BUILD_TESTS OR BUILD_BENCHMARKS)
       TEST json_json_pointer_test SOURCES json_pointer_test.cpp
       TEST json_json_schema_test SOURCES JSONSchemaTest.cpp
   )
+
+  if (${LIBXNVME_FOUND})
+    folly_define_tests(
+      DIRECTORY experimental/io/test/
+        TEST xnvme_test SOURCES XNVMeTest.cpp
+    )
+  endif()
 
   if (${LIBSODIUM_FOUND})
     folly_define_tests(

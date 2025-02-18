@@ -4,7 +4,7 @@
 #include <iostream>
 #include <folly/experimental/io/XNVMe.h>
 
-#if FOLLY_HAS_LIBXNVME
+#ifdef FOLLY_HAS_LIBXNVME
 
 namespace folly {
 
@@ -128,8 +128,6 @@ void XNVMe::process_fn(struct xnvme_cmd_ctx* ctx, XNVMeOp* op) {
   if (xnvme_cmd_ctx_cpl_status(ctx)) {
     xnvme_cli_pinf("Command did not complete successfully");
     xnvme_cmd_ctx_pr(ctx, XNVME_PR_DEF);
-  } else {
-    xnvme_cli_pinf("Command completed succesfully");
   }
   op->cdw = ctx->cpl.result;
   decrementPending();
@@ -139,7 +137,7 @@ void XNVMe::process_fn(struct xnvme_cmd_ctx* ctx, XNVMeOp* op) {
 
 void completion_callback_fn(struct xnvme_cmd_ctx* ctx, void* cb_arg) {
   // Invoke the processing function
-  auto args = static_cast<xnvme_callback_args*>(cb_arg);
+  auto args = reinterpret_cast<xnvme_callback_args*>(cb_arg);
   args->backend->process_fn(ctx, args->op);
   delete args;
 }
@@ -150,8 +148,7 @@ int XNVMe::parseAndCmdPass(XNVMeOp* the_op) {
     return -1;
 
   cmd_ctx->async.cb = completion_callback_fn;
-  cmd_ctx->async.cb_arg =
-      static_cast<void*>(new xnvme_callback_args(the_op, this));
+  cmd_ctx->async.cb_arg = new xnvme_callback_args(the_op, this);
   cmd_ctx->cmd.common.nsid = xnvme_dev_get_nsid(cmd_ctx->dev);
 
   switch (the_op->args.cmd_type) {
@@ -271,7 +268,6 @@ Range<AsyncBase::Op**> XNVMe::doWait(
     size_t maxRequests,
     std::vector<AsyncBase::Op*>& result) {
   result.clear();
-
   size_t outstanding = maxRequests;
   size_t completed = 0;
   size_t total_completed = 0;

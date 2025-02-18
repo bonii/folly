@@ -16,9 +16,6 @@
 
 #pragma once
 
-#if defined(__linux__) && __has_include(</usr/local/include/libxnvme.h>) // TODO: Fix the include path
-
-#define FOLLY_HAS_LIBXNVME 1
-#else
-#define FOLLY_HAS_LIBXNVME 0
+#if defined(__linux__) && __has_include(<libxnvme.h>) // TODO: Fix the include path
+#define FOLLY_HAS_LIBXNVME
 #endif
