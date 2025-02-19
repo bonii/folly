@@ -115,7 +115,7 @@ XNVMe::XNVMe(
 
 XNVMe::~XNVMe() {
   if (available.load()) {
-    std::unique_lock lk {singleMutex_};
+    std::unique_lock lk{singleMutex_};
     CHECK_ERR(xnvme_queue_drain(queue_));
     CHECK_ERR(xnvme_queue_term(queue_));
     if (device != nullptr)
@@ -124,15 +124,14 @@ XNVMe::~XNVMe() {
 }
 
 void XNVMe::process_fn(struct xnvme_cmd_ctx* ctx, XNVMeOp* op) {
-  std::unique_lock lk(singleMutex_);
   if (xnvme_cmd_ctx_cpl_status(ctx)) {
     xnvme_cli_pinf("Command did not complete successfully");
     xnvme_cmd_ctx_pr(ctx, XNVME_PR_DEF);
   }
   op->cdw = ctx->cpl.result;
   decrementPending();
-  xnvme_queue_put_cmd_ctx(ctx->async.queue, ctx);  
-  results.emplace_back(op);
+  xnvme_queue_put_cmd_ctx(ctx->async.queue, ctx);
+  completedResults.emplace_back(op);
 }
 
 void completion_callback_fn(struct xnvme_cmd_ctx* ctx, void* cb_arg) {
@@ -239,7 +238,6 @@ int XNVMe::submitOne(AsyncBaseOp* op) {
 int XNVMe::submitRange(Range<AsyncBaseOp**> ops) {
   size_t total = 0;
   std::unique_lock lk(singleMutex_);
-
   for (size_t i = 0; i < ops.size(); i++) {
     if (parseAndCmdPass(ops[i]->getXNVMeOp()))
       total++;
@@ -258,7 +256,8 @@ void XNVMe::initializeContext() {
 }
 
 int XNVMe::drainPollFd() {
-  // TODO Implement
+  // Currently xNVMe does not expose a pollable eventFd but this will
+  // be available in a subsequent release.
   return -1;
 }
 
@@ -270,21 +269,21 @@ Range<AsyncBase::Op**> XNVMe::doWait(
   result.clear();
   size_t outstanding = maxRequests;
   size_t completed = 0;
-  size_t total_completed = 0;
-  while (completed < minRequests) {
+  size_t total = 0;
+  std::unique_lock lk(singleMutex_);
+
+  while (total < minRequests) {
     // Spin continuously for requests with a configured backoff
-    if (pollMode_ == POLLABLE)
-      std::this_thread::sleep_for(sleepIntervalWhilePolling_);
-    completed = xnvme_queue_poke(queue_, maxRequests - total_completed);
+    std::this_thread::sleep_for(sleepIntervalWhilePolling_);
+    completed = xnvme_queue_poke(queue_, maxRequests - total);
     if (completed > 0)
-      total_completed += completed;
+      total += completed;
 
     if (completed < 0)
       throw std::runtime_error("Something wrong");
   }
-
-  std::unique_lock lk(singleMutex_);
-  for (auto completed_op : results) {
+  
+  for (auto completed_op : completedResults) {
     CHECK(completed_op);
     // decrementPending();
     switch (type) {
@@ -297,6 +296,9 @@ Range<AsyncBase::Op**> XNVMe::doWait(
     }
     result.push_back(std::move(completed_op));
   }
+  // It is safe to clear the completed results since they are drained in 
+  // this API call under a mutex.
+  completedResults.clear();
   return range(result);
 }
 } // namespace folly

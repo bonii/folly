@@ -34,7 +34,7 @@ struct XNMeOpArgs {
       int iovcnt;
     } vector_buffer;
 
-    // For cmd_pass
+    // For cmd_pass and cmd_pass_admin
     struct {
       void* dbuf;
       size_t dbuf_nbytes;
@@ -71,7 +71,6 @@ class XNVMeOp : public AsyncBaseOp {
 
   void toStream(std::ostream& os) const override;
 
-  // API introduced to open a device handle
   void pread(int fd, void* buf, size_t size, off_t start) override;
   void preadv(int fd, const iovec* iov, int iovcnt, off_t start) override;
   void pwrite(int fd, const void* buf, size_t size, off_t start) override;
@@ -105,7 +104,7 @@ class XNVMe : public AsyncBase {
       size_t capacity,
       std::string& device_uri,
       xnvme_opts opts = xnvme_opts_default(),
-      PollMode pollMode = POLLABLE,
+      PollMode pollMode = NOT_POLLABLE,
       std::chrono::duration<double> sleepWhilePolling = defaultPollingInterval);
 
   XNVMe(const XNVMe&) = delete;
@@ -128,9 +127,8 @@ class XNVMe : public AsyncBase {
   mutable SharedMutex singleMutex_;
   std::chrono::duration<double> sleepIntervalWhilePolling_{
       defaultPollingInterval};
-
   std::atomic<bool> available{false};
-  std::vector<XNVMeOp*> results;
+  std::vector<XNVMeOp*> completedResults;
 
   Range<AsyncBase::Op**> doWait(
       WaitType type,
